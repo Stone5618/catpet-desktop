@@ -3,7 +3,7 @@
 一只住在桌面上的黑猫：透明置顶、摸头有反应、会饿会困会闹脾气，关掉再开还记得你。
 Live2D 素材与代码全部本地化，**断网也能跑**。
 
-![桌面效果](test/artifacts/00-desktop.png)
+![桌面效果](test/artifacts/hero.png)
 
 ## 下载安装
 
