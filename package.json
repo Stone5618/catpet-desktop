@@ -1,0 +1,64 @@
+{
+  "name": "catpet-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "猫猫桌宠 - 透明置顶的 Live2D 桌面宠物",
+  "author": "Stone5618",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pet": "powershell -NoProfile -ExecutionPolicy Bypass -File ./start.ps1",
+    "dev": "electron . --enable-logging",
+    "test": "node --test \"test/unit/**/*.test.js\"",
+    "test:e2e": "node test/e2e/run.mjs",
+    "test:all": "npm test && npm run test:e2e",
+    "hitmask": "python tools/gen_hitmask.py",
+    "icon": "python tools/make_icon.py",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.stone5618.catpet",
+    "productName": "猫猫桌宠",
+    "copyright": "Copyright © 2026 Stone5618",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "panel-preload.js",
+      "lib/**/*",
+      "renderer/**/*",
+      "assets/**/*"
+    ],
+    "electronDist": "node_modules/electron/dist",
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "CatPet-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "猫猫桌宠",
+      "uninstallDisplayName": "猫猫桌宠"
+    }
+  }
+}

@@ -1,0 +1,104 @@
+<!-- require MetingJS -->
+<script src="https://npm.elemecdn.com/meting2@0.0.1/js/Meting.min.js"></script>
+
+
+<!--看板娘 - 小白猫-->
+<script type="text/javascript" charset="utf-8" src="https://files.cnblogs.com/files/liuzhou1/L2Dwidget.min.js"></script>
+
+<script>
+  L2Dwidget.init({
+      "model": {
+          jsonPath: "https://unpkg.com/live2d-widget-model-hijiki@1.0.5/assets/hijiki.model.json",
+          "scale": 1
+      },
+      "display": {
+          "position": "right", //模型的表现位置
+          "width": 600, //模型的宽度
+          "height": 600, //模型的高度
+          "hOffset": 300,
+          "vOffset": 100
+      },
+      "mobile": {
+          "show": true,
+          "scale": 0.5
+      },
+      "react": {
+          "opacityDefault": 0.7, //模型默认透明度
+          "opacityOnHover": 0.2
+      }
+  });
+</script>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>漂亮</title>
+  <style>
+    /*背景图*/
+    body {
+      background-image: url("https://api.qjqq.cn/api/Img?sort=acg&random=691")  !important;
+      background-repeat: no-repeat;
+      background-size: cover;
+      background-attachment: fixed;
+      background-position-x: center;
+      padding: 0;
+      margin: 0;
+    }
+  
+    /*底部CSS，.App .table这三个一起的*/
+    .dibu {
+      border-top: 0px;
+      position: absolute;
+      bottom: 0;
+      width: 100%;
+      margin: 0px;
+      padding: 0px;
+    }
+    /* 以下为音乐播放器额外配置 */
+    /* 如果你想要音乐播放器不是很靠底部可以自己设置一下数值 0是靠最底部 */
+    .aplayer .aplayer-body,
+    .aplayer.aplayer-withlist {
+      bottom: 0rem !important;
+    }
+    /*音乐播放器进一步进行隐藏*/
+    /* 需要就加不需要就不用加 */
+    .aplayer.aplayer-fixed.aplayer-narrow .aplayer-body {
+      left: -66px !important;
+    }
+    .aplayer.aplayer-fixed.aplayer-narrow .aplayer-body:hover {
+      left: 0 !important;
+    }
+  </style>
+  <!--音乐播放器所用的文件-->
+  <link rel="stylesheet" href="https://npm.elemecdn.com/aplayer@1.10.1/dist/APlayer.min.css" />
+  <script src="https://npm.elemecdn.com/aplayer@1.10.1/dist/APlayer.min.js"></script> 
+  <!-- require MetingJS -->
+  <script src="https://npm.elemecdn.com/meting2@0.0.1/js/Meting.min.js"></script> 
+</head>
+<body>
+  <div>
+    <!--音乐播放器-->
+    <meting-js fixed="true" autoplay="false" theme="#409EFF" list-folded="true" auto="https://y.qq.com/n/yqq/playlist/7927599544.html"></meting-js> 
+    <center class="dibu">
+        <div style=" line-height: 20px;font-size: 9pt;font-weight: bold;">
+            <span>
+                
+                <span style="color: rgb(255, 217, 0); font-weight: bold;" id="hitokoto">
+                    <a href="#" id="hitokoto_text">
+                        "人生最大的遗憾,就是在最无能为力的时候遇到一个想要保护一生的人."
+                    </a>
+                </span> 
+            </span>
+            <p style="margin-left: 10rem;font-size: 8pt;">
+                <small>
+                    —— Stone's Cloud
+                </small>
+            </p>
+        </div>
+    </center>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self' blob:; img-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self';" />
+  <title>猫猫</title>
+  <link rel="stylesheet" href="pet.css" />
+  <script>
+    // 记录 WebGL 绘制次数：既是"模型真的画出来了"的就绪信号，也方便排查白屏
+    (function () {
+      var original = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (type, attrs) {
+        var context = original.call(this, type, attrs);
+        if (context && /webgl/.test(type) && !context.__catpetWrapped) {
+          context.__catpetWrapped = true;
+          ['drawArrays', 'drawElements'].forEach(function (name) {
+            var draw = context[name].bind(context);
+            context[name] = function () {
+              window.__l2dDraws = (window.__l2dDraws || 0) + 1;
+              return draw.apply(null, arguments);
+            };
+          });
+        }
+        return context;
+      };
+    })();
+  </script>
+  <script src="vendor/live2d/L2Dwidget.min.js"></script>
+</head>
+<body>
+  <div id="bubble"></div>
+  <div id="hearts"></div>
+  <div id="zzz"><span>z</span><span>z</span><span>z</span></div>
+  <div id="anger">💢</div>
+  <div id="stage"></div>
+
+  <script src="../lib/hitmask.js"></script>
+  <script src="hitmask.js"></script>
+  <script>
+    // 桌宠不需要跑满显示器刷新率：用单循环 + 队列把 rAF 限制到 40fps。
+    // 注意不能用"丢帧就重新注册"的写法，那会让回调指数级堆积、直接卡死渲染。
+    (function () {
+      var cap = 40;
+      var nativeRaf = window.requestAnimationFrame.bind(window);
+      var pending = new Map();
+      var nextId = 1;
+      var last = 0;
+
+      // 睡觉时可以降帧省电
+      window.__setFrameCap = function (fps) {
+        cap = Math.max(1, Math.min(60, fps || 40));
+      };
+
+      function pump(ts) {
+        if (ts - last >= 1000 / cap - 2) {
+          last = ts;
+          var batch = Array.from(pending.entries());
+          pending.clear();
+          for (var i = 0; i < batch.length; i++) {
+            try { batch[i][1](ts); } catch (err) { console.error(err); }
+          }
+        }
+        nativeRaf(pump);
+      }
+
+      window.requestAnimationFrame = function (callback) {
+        var id = nextId++;
+        pending.set(id, callback);
+        return id;
+      };
+      window.cancelAnimationFrame = function (id) { pending.delete(id); };
+      nativeRaf(pump);
+    })();
+  </script>
+  <script>
+    window.addEventListener('error', (e) => {
+      console.error('[renderer] ' + (e.message || 'unknown error'));
+    });
+
+    if (window.L2Dwidget) {
+      L2Dwidget.init({
+        model: {
+          jsonPath: 'vendor/live2d/hijiki.model.json',
+          scale: 1,
+        },
+        display: { position: 'left', width: 320, height: 380, hOffset: 0, vOffset: 0 },
+        mobile: { show: false, scale: 1 },
+        react: { opacityDefault: 1, opacityOnHover: 1 },
+        dev: { border: false },
+      });
+    } else {
+      console.error('[renderer] L2Dwidget 未加载');
+    }
+  </script>
+  <script src="pet.js"></script>
+</body>
+</html>
