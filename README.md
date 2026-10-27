@@ -1,83 +1,95 @@
 # 猫猫桌宠 v1.0
 
-一只住在桌面上的黑猫：透明置顶、摸头有反应、会饿会困会闹脾气，关掉再开还记得你。
-Live2D 素材与代码全部本地化，**断网也能跑**。
+一只住在桌面上的猫：透明置顶、摸头有反应、会饿会困会闹脾气，关掉再开还记得你。
 
-![桌面效果](test/artifacts/hero.png)
+原生实现（C# + Win32 分层窗口），不是网页套壳；素材全部本地化，**断网也能跑**。
 
-## 下载安装
+![猫猫桌宠](docs/hero.png)
 
-到 [Releases](https://github.com/Stone5618/catpet-desktop/releases/latest) 下载 `CatPet-Setup-1.0.0.exe`，双击安装即可（Windows 10/11 x64）。
+## 两只猫
 
-> 安装包未做代码签名，首次运行 Windows SmartScreen 可能拦截：点「更多信息」→「仍要运行」。
-> 卸载：设置 → 应用 → 猫猫桌宠。
+| 黑猫 | 白猫 |
+|---|---|
+| hijiki | tororo |
 
-## 快速开始（从源码）
-
-```powershell
-cd E:\Agent\猫猫桌宠-electron
-npm install
-npm run pet        # 或 .\start.ps1
-```
-
-> **环境坑**：某些终端（含 DSH 自己）设置了 `ELECTRON_RUN_AS_NODE=1`，会让 `electron.exe` 退化成普通 Node，报 `ipcMain undefined`。`start.ps1` 已处理。
+右键菜单或设置面板一键切换，切换后窗口会按新素材重新贴合。
 
 ## 能玩什么
 
 | 交互 | 反应 |
 |---|---|
-| 轻点猫 | 跳一下 + 气泡说话 + 爱心 + 呼噜声，亲密度 +1 |
-| 连戳 5 次（8 秒内） | 炸毛 💢，拒绝被摸，心情下降，30 秒后消气 |
-| 按住拖动 | 跟着鼠标走；快速甩出去会带物理惯性，撞墙反弹、落地滑行 |
-| 双击猫 | 打开「猫猫档案」：等级、心情条、今日被摸/吃鱼、喂食、设置 |
-| 右键 / 托盘 | 摸摸、喂小鱼干、显示面板、置顶、自动穿透、开机自启、退出 |
-| 放着不管 | 90 秒入睡（23:00–06:00 只需 30 秒），显示 Zzz，点击唤醒 |
+| 轻点猫 | 跳一下 + 气泡说话 + 爱心 + 喵叫/呼噜，亲密度 +1 |
+| 连戳 5 次（8 秒内） | 炸毛，拒绝被摸，30 秒后消气 |
+| 按住拖动 | 跟着鼠标走；快速甩出去带惯性，撞到屏幕边缘会弹、落地会滑 |
+| 双击猫 | 打开「猫猫档案」：等级、亲密度、心情、今日统计、喂食、设置 |
+| 右键 / 托盘 | 摸摸、喂小鱼干、打开面板、藏起、置顶、静音、换猫、退出 |
+| 放着不管 | 你离开一会儿它就睡（白天 3 分钟、夜间 1 分钟没有键鼠输入），显示 Zzz；你回来动一下键鼠就醒 |
 | 关掉再开 | 按离开时长掉心情，重开时按亲密度说不同的话 |
 
 透明区域**逐像素穿透**：鼠标落在猫身外时点击会穿到下层窗口，落在猫身上才响应。
-状态存在 `%APPDATA%\catpet-desktop\state.json`，损坏时自动回退默认值。
+状态存在 `%APPDATA%\CatPet\state.json`，原子写入，损坏时自动回退默认值。
 
-## 目录结构
+## 安装
 
-```
-main.js             主进程：窗口、物理、托盘、存档、穿透判定、自愈
-preload.js          渲染层桥接
-panel-preload.js    面板桥接
-lib/                纯逻辑（可单测）：mood / physics / hitmask / store / lines
-renderer/           页面：index.html、pet.css、pet.js、panel.*
-renderer/vendor/    Live2D 库与 hijiki 模型（本地）
-tools/gen_hitmask.py 从渲染截图生成点击遮罩
-test/unit/          node:test 单元测试
-test/e2e/           CDP 驱动的端到端测试
-test/os/            真实鼠标/窗口测试
-PRODUCT.md          产品规格与验收口径
-TEST-REPORT.md      测试报告（含性能与稳定性对照）
-```
+到 [Releases](https://github.com/Stone5618/catpet-desktop/releases/latest) 下载 `CatPet-Setup-1.0.0.exe`，双击安装即可（Windows 10 1903+ / 11 x64）。
 
-## 测试
+> 安装包未做代码签名，首次运行 Windows SmartScreen 可能拦截：点「更多信息」→「仍要运行」。
+> 卸载：设置 → 应用 → 猫猫桌宠，会一并清除存档与开机自启项。
+
+## 设置面板
+
+双击猫打开：
+
+- 等级 / 亲密度 / 心情 / 今日被摸与吃鱼
+- 缩放：75% / 100% / 125% / 150%
+- 静音、开机自启
+- 换皮肤、摸摸头、喂小鱼干、藏起来、退出
+
+## 可扩展
+
+**加一只猫**（不用改渲染代码）：
+
+1. 把 Live2D 模型放进 `assets/live2d/<名字>/`
+2. 用 `tools/bake.js` 烘焙成帧素材（关键帧 + 差分，60fps 循环）
+3. 菜单/面板加一项切换
+
+**加一句台词**：`src/Core/Lines.cs` 对应数组里加一行，自动避免连续重复。
+
+**加一个音效**：WAV 放进 `assets/sounds/`，在事件处调用 `Audio.Play("文件名")`。
+
+## 从源码构建
+
+依赖：.NET Framework 4.8（系统自带）、Roslyn `csc`。
 
 ```powershell
-npm test                      # 32 项单元测试
-npm run test:e2e              # 25 项端到端（会跑到 test/artifacts 截图）
-pwsh test/os/smoke.ps1        # 12 项真实鼠标/窗口测试
+.\build.ps1 -Gui          # 产出 bin\CatPet.exe
+.\bin\CatPet.exe --selftest   # 19 项自检
+makensis installer.nsi    # 打安装包（需 NSIS）
 ```
 
-结果：单元 32/32、端到端 25/25、系统级 12/12；空闲 CPU 1.53%、内存 375MB、帧率 32fps、冷启动 0.7s。
-详见 [TEST-REPORT.md](TEST-REPORT.md)。
+## 技术说明
+
+- Win32 分层窗口 + `UpdateLayeredWindow`，逐像素 alpha，命中测试由系统按 alpha 判定
+- 独立渲染线程，60fps；缩放档按帧脏区重绘，只有出现粒子特效时才整幅重画
+- 素材：Live2D 模型离线烘焙成 **CPF1** 帧容器（关键帧 + 差分，Deflate 压缩），运行时零解码开销
+
+## 素材与授权
+
+- 模型：Live2D 官方示例模型 `hijiki` / `tororo`，遵循其示例模型许可
+- 音效：来自 freesound.org，均为 **CC0**（公共领域）
+  - meow：*New Cat Meow 1* by steffcaffrey
+  - meow2：*cat meow* by tuberatanka
+  - hiss：*Cat Hissing* by aunrea
+  - purr：*Cat purrs* by rainkencana
+  - eat：*cat eating* by patchytherat
+- 项目代码：[MIT](LICENSE)
 
 ## 已知限制
 
-- 内存约 375MB（Electron 基座 + GPU 进程）；要压到 100MB 内需迁 Tauri，页面代码可原样复用。
-- 多显示器做了钳制但未做拔插自动化验证。
-- 未打包 exe（`electron-builder` 一步之遥）。
-- 模型沿用原型里的 hijiki，暂无换肤。
+- 仅 Windows 10 1903+ / 11 x64
+- 多显示器与高 DPI 场景未做自动化验证
+- 非 100% 缩放时 CPU 占用会上升（缩放需要每帧重采样），低配机建议 100%
 
-## 调试
+## 反馈
 
-```powershell
-$env:CATPET_DEBUG='1'    # 主进程 tick 日志 + 渲染错误
-$env:CATPET_PERF='perf.json'  # 跑 20 秒性能采样后退出
-$env:CATPET_SHOT='shot.png'   # 6 秒后截图并退出
-```
-
-`reference/Test.html` 是最初的原型，保持原样未改。
+有问题或想法，欢迎开 [Issue](https://github.com/Stone5618/catpet-desktop/issues)。

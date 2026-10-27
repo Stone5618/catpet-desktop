@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>bake</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 320px; height: 380px; background: transparent; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+  <script src="../assets/live2d/lib/L2Dwidget.min.js"></script>
+</head>
+<body>
+  <script>
+    (function () {
+      var skin = new URLSearchParams(location.search).get('skin') || 'hijiki';
+      var base = '../assets/live2d/' + skin;
+      L2Dwidget.init({
+        model: { jsonPath: base + '/' + skin + '.model.json', scale: 1 },
+        display: { position: 'left', width: 320, height: 380, hOffset: 0, vOffset: 0 },
+        mobile: { show: false, scale: 1 },
+        react: { opacityDefault: 1, opacityOnHover: 1 },
+        dev: { border: false }
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,6 +1,8 @@
-* text=auto eol=lf
+﻿* text=auto
+*.cpf binary
 *.png binary
 *.ico binary
-*.exe binary
+*.wav binary
 *.moc binary
-*.7z binary
+*.mtn binary
+*.exe binary
