@@ -78,6 +78,45 @@ namespace CatPet
                 }
             }
 
+            // 150% 高分母带（若存在）：流式解码语义与 1x 一致性检查
+            string hiRes = Path.Combine(assets, "hijiki", "frames-150.cpf");
+            if (File.Exists(hiRes))
+            {
+                try
+                {
+                    using (var set = FrameSet.Load(hiRes))
+                    {
+                        Check("150母带加载: hijiki", set.Width > 0 && set.FrameCount > 0,
+                            $"{set.Width}x{set.Height} {set.FrameCount}帧 {set.Fps}fps");
+                        set.Reset();
+                        int opaque = 0;
+                        int oor = 0;
+                        var sw2 = Stopwatch.StartNew();
+                        for (int i = 0; i < set.FrameCount; i++)
+                        {
+                            var buf = set.Next();
+                            if (i == 0)
+                            {
+                                for (int pp = 3; pp < buf.Length; pp += 4) if (buf[pp] > 8) opaque++;
+                            }
+                            if (set.LastRectW > 0 &&
+                                (set.LastRectX < 0 || set.LastRectY < 0 ||
+                                 set.LastRectX + set.LastRectW > set.Width ||
+                                 set.LastRectY + set.LastRectH > set.Height)) oor++;
+                        }
+                        sw2.Stop();
+                        Check("150母带首帧非透明: hijiki", opaque > 10000, opaque.ToString());
+                        Check("150母带脏矩形越界=0: hijiki", oor == 0, oor.ToString());
+                        double per = sw2.Elapsed.TotalMilliseconds / set.FrameCount;
+                        Check("150母带流式单帧成本 < 6ms: hijiki", per < 6.0, per.ToString("0.00") + "ms");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Check("150母带异常: hijiki", false, ex.Message);
+                }
+            }
+
             long now = 1700000000000;
             var s = PetState.Create(now);
             Check("初始心情/亲密度", s.Mood == 70 && s.Affinity == 0);

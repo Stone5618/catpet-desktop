@@ -1,0 +1,23 @@
+{
+  "skin": "tororo",
+  "width": 320,
+  "height": 380,
+  "masterScale": 1.5,
+  "crop": {
+    "x": 0,
+    "y": 269,
+    "width": 613,
+    "height": 594
+  },
+  "fps": 60,
+  "frames": 213,
+  "loopMs": 3553,
+  "capturedFrames": 191,
+  "capturedFps": 19.1,
+  "format": "CPF1",
+  "blendFrames": 4,
+  "keyframeBytes": 63343,
+  "deltaBytes": 3390708,
+  "generatedAt": "2026-10-30T16:38:53.849Z",
+  "totalMB": 3.3
+}

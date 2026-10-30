@@ -32,8 +32,18 @@ const SECONDS = Number(arg('seconds', '10'));
 const TARGET_FPS = Number(arg('fps', '60'));
 const LOOP_MIN = Number(arg('loopmin', '2000'));
 const LOOP_MAX = Number(arg('loopmax', '3500'));
+// masterScale：母带分辨率倍率。1=1x 母带（100%/75% 用）；1.5=高分母带（150% 档 1:1 播放，125% 由其缩小）
+const MASTER_SCALE = Math.max(0.5, Math.min(3, Number(arg('scale', '1'))));
 const WIDTH = 320;
 const HEIGHT = 380;
+// L2Dwidget 实测定标（display=model.scale=d，窗口=display*1.35）：
+//   d=1.42 → 猫 365x540，即 1x 母带(241x319)的 1.506x/1.693y，完整
+//   （猫贴 canvas 左/下与 1x 素材形态一致，非裁切；L2D 的 canvas 贴窗口左下放置，
+//     窗口加余量只会让 canvas 跟着挪，永远没有底/左余量——所以窗口恰好 display*1.35）
+const CALIB = 1.0563; // 1.506/1.42
+const RENDER_SCALE = MASTER_SCALE / CALIB;
+const CAP_W = Math.round(WIDTH * RENDER_SCALE * 1.35);
+const CAP_H = Math.round(HEIGHT * RENDER_SCALE * 1.6);
 
 app.commandLine.appendSwitch('allow-file-access-from-files');
 
@@ -63,12 +73,14 @@ function blend(a, b, t) {
 
 app.whenReady().then(async () => {
   const win = new BrowserWindow({
-    width: WIDTH, height: HEIGHT, x: 80, y: 80,
+    width: CAP_W, height: CAP_H, x: 80, y: 80,
     show: true, transparent: true, frame: false, hasShadow: false, skipTaskbar: true,
     webPreferences: { backgroundThrottling: false },
   });
+  // 用 zoomFactor 提高渲染像素密度：CSS 布局不变，canvas/WebGL backing 随 DPR 放大，
+  // Live2D 纹理直接从 2048 原图采样 → 高分母带，不经任何插值
 
-  await win.loadFile(path.join(__dirname, 'bake-page.html'), { search: `skin=${SKIN}` });
+  await win.loadFile(path.join(__dirname, 'bake-page.html'), { search: `skin=${SKIN}&scale=${RENDER_SCALE.toFixed(4)}` });
   await new Promise((r) => setTimeout(r, 5000));
 
   const hasCanvas = await win.webContents.executeJavaScript('!!document.querySelector("canvas")').catch(() => false);
@@ -144,11 +156,11 @@ app.whenReady().then(async () => {
   }
 
   // 内容包围盒（逐像素、alpha>0，避免漏掉抗锯齿边缘把猫裁掉一圈）
-  let minX = WIDTH, minY = HEIGHT, maxX = -1, maxY = -1;
+  let minX = CAP_W, minY = CAP_H, maxX = -1, maxY = -1;
   for (const png of picked) {
     const bmp = nativeImage.createFromBuffer(png).toBitmap();
-    for (let y = 0; y < HEIGHT; y++) {
-      for (let x = 0; x < WIDTH; x++) {
+    for (let y = 0; y < CAP_H; y++) {
+      for (let x = 0; x < CAP_W; x++) {
         if (bmp[(y * WIDTH + x) * 4 + 3] > 0) {
           if (x < minX) minX = x;
           if (x > maxX) maxX = x;
@@ -167,8 +179,8 @@ app.whenReady().then(async () => {
   const crop = {
     x: Math.max(0, minX - PAD),
     y: Math.max(0, minY - PAD),
-    width: Math.min(WIDTH, maxX + PAD + 1) - Math.max(0, minX - PAD),
-    height: Math.min(HEIGHT, maxY + PAD + 1) - Math.max(0, minY - PAD),
+    width: Math.min(CAP_W, maxX + PAD + 1) - Math.max(0, minX - PAD),
+    height: Math.min(CAP_H, maxY + PAD + 1) - Math.max(0, minY - PAD),
   };
   console.log('BAKE_CROP ' + JSON.stringify(crop));
 
@@ -260,20 +272,24 @@ app.whenReady().then(async () => {
     parts.push(h, c.data);
   }
   const outDir = path.join(OUT_ROOT, SKIN);
-  fs.rmSync(outDir, { recursive: true, force: true });
+  if (MASTER_SCALE === 1) {
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
   fs.mkdirSync(outDir, { recursive: true });
   const cpf = Buffer.concat(parts);
-  fs.writeFileSync(path.join(outDir, 'frames.cpf'), cpf);
+  const suffix = MASTER_SCALE === 1 ? '' : '-' + String(Math.round(MASTER_SCALE * 100));
+  fs.writeFileSync(path.join(outDir, `frames${suffix}.cpf`), cpf);
 
   for (const idx of [0, Math.floor(buffers.length / 2)]) {
     const img = nativeImage.createFromBuffer(picked[Math.min(idx, picked.length - 1)]).crop(crop);
-    fs.writeFileSync(path.join(outDir, `preview-${String(idx).padStart(4, '0')}.png`), img.toPNG());
+    fs.writeFileSync(path.join(outDir, `preview${suffix}-${String(idx).padStart(4, '0')}.png`), img.toPNG());
   }
 
   const meta = {
     skin: SKIN,
     width: WIDTH,
     height: HEIGHT,
+    masterScale: MASTER_SCALE,
     crop,
     fps: TARGET_FPS,
     frames: buffers.length,
@@ -286,7 +302,11 @@ app.whenReady().then(async () => {
     deltaBytes,
     generatedAt: new Date().toISOString(),
   };
-  fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta, null, 2));
+  // 1x 母带的 meta 是运行时必需文件（meta.json）；高分母带另存 meta-150.json 供参考
+  fs.writeFileSync(path.join(outDir, `meta${suffix}.json`), JSON.stringify(meta, null, 2));
+  if (MASTER_SCALE !== 1 && !fs.existsSync(path.join(outDir, 'meta.json'))) {
+    console.error('BAKE_WARN 高分母带烘焙前必须存在 1x meta.json（运行时读取），当前缺失');
+  }
   console.log('BAKE_DONE ' + JSON.stringify({ ...meta, totalMB: +(cpf.length / 1024 / 1024).toFixed(2) }));
   app.quit();
 });

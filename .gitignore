@@ -9,3 +9,7 @@ test/smoke-result.json
 minitest.cs
 st?.txt
 selftest-out.txt
+
+# 烘焙工具临时依赖（bake.js 用 electron 抓帧）
+tools/node_modules/
+tools/package.json

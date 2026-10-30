@@ -105,6 +105,12 @@ namespace CatPet.UI
         private int _decodedCount;
         private int _decodedIndex;
         private SkinMeta _meta;
+        // 流式播放（高分母带）：true 时渲染线程逐帧解压，_decoded 为 null
+        private volatile bool _streaming;
+        // 屏幕像素 / 母带像素（1x 母带=scale；150% 母带=scale/1.5）
+        private double _renderScale = 1.0;
+        // 高分母带的内容矩形（流式路径窗口/blit 的源与尺寸基准）
+        private Rectangle _hiResRect;
         private PetMode _mode = PetMode.Idle;
         private double _scale = 1.0;
         private int _winW = BaseW, _winH = BaseH;
@@ -213,9 +219,31 @@ namespace CatPet.UI
 
         private void LoadSkin(string skin)
         {
+            LoadSkin(skin, _state.Scale);
+        }
+
+        // 高分母带判定阈值：>=125% 的档位用 150% 母带（125% 缩小、150% 原生 1:1）
+        private const double HiResMinScale = 1.2;
+        // 150% 母带相对 1x 的倍率（bake.js --scale=1.5 产出）
+        private const double MasterHiResScale = 1.5;
+
+        private void LoadSkin(string skin, double scale)
+        {
             string dir = Path.Combine(AssetsDir, "skins", skin);
             string cpf = Path.Combine(dir, "frames.cpf");
             string metaPath = Path.Combine(dir, "meta.json");
+            bool hiRes = scale >= HiResMinScale;
+            string hiResCpf = Path.Combine(dir, "frames-150.cpf");
+            string hiResMeta = Path.Combine(dir, "meta-150.json");
+            if (hiRes && File.Exists(hiResCpf))
+            {
+                cpf = hiResCpf;
+                metaPath = hiResMeta;
+            }
+            else
+            {
+                hiRes = false;
+            }
             if (!File.Exists(cpf))
             {
                 Store.Log("缺少皮肤: " + cpf);
@@ -228,20 +256,63 @@ namespace CatPet.UI
                 ? ser.Deserialize<SkinMeta>(File.ReadAllText(metaPath))
                 : new SkinMeta { crop = new CropRect { x = 0, y = 0, width = frames.Width, height = frames.Height } };
 
-            // 启动时一次性解码整段循环：60fps 播放时不再有解压开销
+            // 启动时一次性解码整段循环：60fps 播放不再有解压开销。
+            // 高分母带（150%）预解码要吃 200MB+ 内存，改走流式：渲染线程逐帧解压
+            // （每帧约 2-3ms），内存只保留压缩帧 + 滚动缓冲。
             int stride = frames.Width * frames.Height * 4;
-            var decoded = new byte[(long)frames.FrameCount * stride];
-            var rx = new int[frames.FrameCount];
-            var ry = new int[frames.FrameCount];
-            var rw = new int[frames.FrameCount];
-            var rh = new int[frames.FrameCount];
-            frames.Reset();
-            for (int i = 0; i < frames.FrameCount; i++)
+            byte[] decoded = null;
+            int[] rx = null, ry = null, rw = null, rh = null;
+            if (!hiRes)
             {
-                var buf = frames.Next();
-                Buffer.BlockCopy(buf, 0, decoded, i * stride, stride);
-                rx[i] = frames.LastRectX; ry[i] = frames.LastRectY;
-                rw[i] = frames.LastRectW; rh[i] = frames.LastRectH;
+                decoded = new byte[(long)frames.FrameCount * stride];
+                rx = new int[frames.FrameCount];
+                ry = new int[frames.FrameCount];
+                rw = new int[frames.FrameCount];
+                rh = new int[frames.FrameCount];
+                frames.Reset();
+                for (int i = 0; i < frames.FrameCount; i++)
+                {
+                    var buf = frames.Next();
+                    Buffer.BlockCopy(buf, 0, decoded, i * stride, stride);
+                    rx[i] = frames.LastRectX; ry[i] = frames.LastRectY;
+                    rw[i] = frames.LastRectW; rh[i] = frames.LastRectH;
+                }
+            }
+            else
+            {
+                frames.Reset(); // 流式：准备首帧
+                // 内容矩形：扫 5 帧取 alpha>8 的并集 bbox（猫在动画中会浮动/横移，
+                // 窗口内容=全部帧的公共覆盖范围，再留 32px 余量；多余画布区透明且逐像素穿透）
+                int probe = Math.Max(1, frames.FrameCount / 5);
+                int minX = int.MaxValue, minY = int.MaxValue, maxX = -1, maxY = -1;
+                int fstride = frames.Width * 4;
+                for (int p = 0; p < 5; p++)
+                {
+                    var buf = frames.Next();
+                    for (int y = 0; y < frames.Height; y++)
+                    {
+                        int rowBase = y * fstride;
+                        for (int x = 0; x < frames.Width; x++)
+                        {
+                            if (buf[rowBase + x * 4 + 3] > 8)
+                            {
+                                if (x < minX) minX = x;
+                                if (x > maxX) maxX = x;
+                                if (y < minY) minY = y;
+                                if (y > maxY) maxY = y;
+                            }
+                        }
+                    }
+                }
+                const int Pad = 32;
+                _hiResRect = new Rectangle
+                {
+                    X = Math.Max(0, minX - Pad),
+                    Y = Math.Max(0, minY - Pad),
+                    Width = Math.Min(frames.Width - Math.Max(0, minX - Pad), maxX + Pad + 1 - Math.Max(0, minX - Pad)),
+                    Height = Math.Min(frames.Height - Math.Max(0, minY - Pad), maxY + Pad + 1 - Math.Max(0, minY - Pad)),
+                };
+                frames.Reset(); // 扫描后回到循环起点
             }
 
             lock (_sync)
@@ -249,22 +320,35 @@ namespace CatPet.UI
                 _frames?.Dispose();
                 _frames = frames;
                 _meta = meta;
+                _streaming = hiRes;
+                // 屏幕像素 / 母带像素：150% 档 1:1，125% 档缩小；1x 母带按 scale 放大
+                _renderScale = hiRes ? scale / MasterHiResScale : scale;
                 _decoded = decoded;
                 _decodedStride = stride;
-                _decodedCount = frames.FrameCount;
+                _decodedCount = hiRes ? 0 : frames.FrameCount;
                 _decodedIndex = 0;
                 _rectX = rx; _rectY = ry; _rectW = rw; _rectH = rh;
                 _fullScaledDraw = true;
                 if (_frameHandle.IsAllocated) _frameHandle.Free();
-                _frameHandle = GCHandle.Alloc(decoded, GCHandleType.Pinned);
-                _framePtr = _frameHandle.AddrOfPinnedObject();
+                if (decoded != null)
+                {
+                    _frameHandle = GCHandle.Alloc(decoded, GCHandleType.Pinned);
+                    _framePtr = _frameHandle.AddrOfPinnedObject();
+                }
+                else
+                {
+                    _framePtr = IntPtr.Zero;
+                }
 
                 // 缩放渲染用的常驻缓冲：每帧只做一次拷贝，绝不每帧 new Bitmap
+                // 高分母带：缓冲按内容矩形尺寸开（行宽=矩形宽）
                 if (_scaleSrcHandle.IsAllocated) _scaleSrcHandle.Free();
                 _scaleSrcBmp?.Dispose();
-                _scaleSrcBytes = new byte[stride];
+                int bufW = _streaming ? _hiResRect.Width : _frames.Width;
+                int bufH = _streaming ? _hiResRect.Height : _frames.Height;
+                _scaleSrcBytes = new byte[bufW * bufH * 4];
                 _scaleSrcHandle = GCHandle.Alloc(_scaleSrcBytes, GCHandleType.Pinned);
-                _scaleSrcBmp = new Bitmap(_frames.Width, _frames.Height, _frames.Width * 4,
+                _scaleSrcBmp = new Bitmap(bufW, bufH, bufW * 4,
                     PixelFormat.Format32bppPArgb, _scaleSrcHandle.AddrOfPinnedObject());
 
                 frames = null;
@@ -285,11 +369,19 @@ namespace CatPet.UI
         private void ApplyScale(double scale, bool rebuild)
         {
             _scale = Math.Max(0.5, Math.Min(2.0, scale));
-            // 窗口贴着猫本体：宽度=素材宽，高度=气泡带+素材高
+            _renderScale = _streaming ? _scale / MasterHiResScale : _scale;
+            // 窗口贴着猫本体：宽度=素材宽，高度=气泡带+素材高（屏幕像素/母带像素比换算）
+            // 高分母带：内容矩形是扫帧得到的猫活动范围，比整幅画布小得多
+            double rs = _renderScale;
             int contentW = _meta != null ? _meta.crop.width : BaseW;
             int contentH = _meta != null ? _meta.crop.height : BaseH;
-            int w = (int)Math.Round(contentW * _scale);
-            int h = (int)Math.Round(TopSpace * _scale) + (int)Math.Round(contentH * _scale);
+            if (_streaming)
+            {
+                contentW = _hiResRect.Width;
+                contentH = _hiResRect.Height;
+            }
+            int w = (int)Math.Round(contentW * rs);
+            int h = (int)Math.Round(TopSpace * rs) + (int)Math.Round(contentH * rs);
             if (w == _winW && h == _winH && !rebuild) return;
             lock (_sync)
             {
@@ -312,6 +404,14 @@ namespace CatPet.UI
 
         public void SetScale(double scale)
         {
+            // 跨过高分母带阈值（100%→125% 或反向）时母带要换，LoadSkin 后 ApplyScale 重算窗口
+            bool wasHiRes = _streaming;
+            bool wantHiRes = scale >= HiResMinScale;
+            if (wasHiRes != wantHiRes)
+            {
+                _state.Scale = scale; // LoadSkin 内部要读新档位
+                LoadSkin(_state.Skin, scale);
+            }
             ApplyScale(scale, true);
             Store.Save(_state);
             SettingsChanged?.Invoke();
@@ -420,13 +520,20 @@ namespace CatPet.UI
             {
                 if (_canvasGfx == null || _frames == null) return;
 
-                // 帧推进
-                if (Environment.GetEnvironmentVariable("CATPET_NODECODE") != "1") AdvanceFrame();
+                // 帧推进：流式逐帧解压；预解码路径只推索引
+                if (!_streaming)
+                {
+                    if (Environment.GetEnvironmentVariable("CATPET_NODECODE") != "1") AdvanceFrame();
+                }
+                else
+                {
+                    if (Environment.GetEnvironmentVariable("CATPET_NODECODE") != "1") _frames.Next();
+                }
 
                 int catX = 0;
-                int catY = (int)Math.Round(TopSpace * _scale);
-                int catW = (int)Math.Round(_meta.crop.width * _scale);
-                int catH = (int)Math.Round(_meta.crop.height * _scale);
+                int catY = (int)Math.Round(TopSpace * _renderScale);
+                int catW = (int)Math.Round((_streaming ? _hiResRect.Width : _meta.crop.width) * _renderScale);
+                int catH = (int)Math.Round((_streaming ? _hiResRect.Height : _meta.crop.height) * _renderScale);
 
                 // 状态覆盖层（与气泡/粒子同一时基：wall clock）
                 long wall = NowMs();
@@ -434,9 +541,9 @@ namespace CatPet.UI
                 // 气泡和 Zzz 在顶部条里，每帧单独清条即可
                 bool effects = HasParticles();
 
-                if (Math.Abs(_scale - 1.0) < 0.001)
+                if (Math.Abs(_renderScale - 1.0) < 0.001)
                 {
-                    // 1x 是整块覆盖写，只清边框即可
+                    // 母带像素=屏幕像素（1x 档或 150% 档原生）：整块覆盖写，只清边框即可
                     ClearOutside(catX, catY, catW, catH);
                     BlitFrame1x();
                 }
@@ -483,11 +590,31 @@ namespace CatPet.UI
         /// <summary>缩放档：整幅重画。</summary>
         private void DrawScaledFull(int catX, int catY, int catW, int catH)
         {
-            if (_scaleSrcBmp == null || _decoded == null) return;
+            if (_scaleSrcBmp == null || (_decoded == null && !_streaming)) return;
             Array.Clear(_canvasBytes, 0, _canvasBytes.Length);
-            Buffer.BlockCopy(_decoded, _decodedIndex * _decodedStride, _scaleSrcBytes, 0, _decodedStride);
+            CopyCurrentFrameInto(_scaleSrcBytes);
             _canvasGfx.DrawImage(_scaleSrcBmp, new Rectangle(catX, catY, catW, catH));
-            _lastSrcX = 0; _lastSrcY = 0; _lastSrcW = _frames.Width; _lastSrcH = _frames.Height;
+            _lastSrcX = 0; _lastSrcY = 0;
+            _lastSrcW = _streaming ? _hiResRect.Width : _frames.Width;
+            _lastSrcH = _streaming ? _hiResRect.Height : _frames.Height;
+        }
+
+        /// <summary>当前帧内容 → 目标缓冲。预解码按索引整幅拷贝；流式拷 _hiResRect 区域（行宽=矩形宽）。</summary>
+        private void CopyCurrentFrameInto(byte[] dst)
+        {
+            if (!_streaming)
+            {
+                Buffer.BlockCopy(_decoded, _decodedIndex * _decodedStride, dst, 0, _decodedStride);
+                return;
+            }
+            // 高分母带：源帧整幅，只拷 _hiResRect 区域
+            var r = _hiResRect;
+            int srcStride = _frames.Width * 4;
+            for (int y = 0; y < r.Height; y++)
+            {
+                Buffer.BlockCopy(_frames.Current, (r.Y + y) * srcStride + r.X * 4,
+                                 dst, y * r.Width * 4, r.Width * 4);
+            }
         }
 
         /// <summary>
@@ -496,10 +623,22 @@ namespace CatPet.UI
         /// </summary>
         private void DrawScaledDirty(int catX, int catY, int catW, int catH)
         {
-            if (_scaleSrcBmp == null || _decoded == null || _rectW == null) return;
-            int sw = _frames.Width, sh = _frames.Height;
-            int cx = _rectX[_decodedIndex], cy = _rectY[_decodedIndex];
-            int cw = _rectW[_decodedIndex], ch = _rectH[_decodedIndex];
+            if (_scaleSrcBmp == null || (_decoded == null && !_streaming) || (!_streaming && _rectW == null)) return;
+            int cx, cy, cw, ch;
+            int sw, sh;
+            if (_streaming)
+            {
+                // 流式：脏矩形来自 FrameSet 刚解压的这一帧，坐标系换到内容矩形（_scaleSrcBmp 行宽=矩形宽）
+                cx = _frames.LastRectX - _hiResRect.X; cy = _frames.LastRectY - _hiResRect.Y;
+                cw = _frames.LastRectW; ch = _frames.LastRectH;
+                sw = _hiResRect.Width; sh = _hiResRect.Height;
+            }
+            else
+            {
+                cx = _rectX[_decodedIndex]; cy = _rectY[_decodedIndex];
+                cw = _rectW[_decodedIndex]; ch = _rectH[_decodedIndex];
+                sw = _frames.Width; sh = _frames.Height;
+            }
             if (cw <= 0 || ch <= 0) return;
 
             int ux = Math.Min(cx, _lastSrcX);
@@ -513,18 +652,23 @@ namespace CatPet.UI
             // 只把需要的行搬进常驻缓冲：源和目标都要加上 ux 偏移，
             // 否则源图左缘 (ur-ux) 宽的内容会被贴到目标 [0, ur-ux)，
             // 真正的 [ux, ur) 区域反而残留旧像素
-            int baseOff = _decodedIndex * _decodedStride;
-            int colBytes = (ur - ux) * 4;
-            for (int y = uy; y < ub; y++)
+            // 流式：CopyCurrentFrameInto 已把整个内容矩形搬进常驻缓冲（rect 行宽与缓冲一致），
+            // 行级对齐拷贝是预解码路径（源=整幅帧）的专属语义，流式直接跳过
+            if (!_streaming)
             {
-                Buffer.BlockCopy(_decoded, baseOff + y * sw * 4 + ux * 4,
-                                 _scaleSrcBytes, y * sw * 4 + ux * 4, colBytes);
+                int baseOff = _decodedIndex * _decodedStride;
+                int colBytes = (ur - ux) * 4;
+                for (int y = uy; y < ub; y++)
+                {
+                    Buffer.BlockCopy(_decoded, baseOff + y * sw * 4 + ux * 4,
+                                     _scaleSrcBytes, y * sw * 4 + ux * 4, colBytes);
+                }
             }
 
-            int dx = Math.Max(0, catX + (int)Math.Floor(ux * _scale));
-            int dy = Math.Max(0, catY + (int)Math.Floor(uy * _scale));
-            int dr = Math.Min(_winW, catX + (int)Math.Ceiling(ur * _scale));
-            int db = Math.Min(_winH, catY + (int)Math.Ceiling(ub * _scale));
+            int dx = Math.Max(0, catX + (int)Math.Floor(ux * _renderScale));
+            int dy = Math.Max(0, catY + (int)Math.Floor(uy * _renderScale));
+            int dr = Math.Min(_winW, catX + (int)Math.Ceiling(ur * _renderScale));
+            int db = Math.Min(_winH, catY + (int)Math.Ceiling(ub * _renderScale));
             if (dr <= dx || db <= dy) return;
 
             int stride = _winW * 4;
@@ -574,16 +718,23 @@ namespace CatPet.UI
         }
         private void BlitFrame1x()
         {
-            var src = _decoded;
+            // 流式（150% 母带 1:1）从 FrameSet 滚动缓冲取当前帧；预解码路径取 decoded[index]
+            byte[] src = _streaming ? _frames.Current : _decoded;
+            int baseOffset = _streaming ? 0 : _decodedIndex * _decodedStride;
             int sw = _frames.Width;
-            int baseOffset = _decodedIndex * _decodedStride;
-            int cy = TopSpace;
-            int w = Math.Min(sw, _winW);
-            int h = Math.Min(_frames.Height, _winH - cy);
+            // 源偏移：流式=内容矩形左上角；预解码=整幅帧原点
+            int srcX = _streaming ? _hiResRect.X : 0;
+            int srcY = _streaming ? _hiResRect.Y : 0;
+            int contentW = _streaming ? _hiResRect.Width : _frames.Width;
+            int contentH = _streaming ? _hiResRect.Height : _frames.Height;
+            int cy = (int)Math.Round(TopSpace * _renderScale);
+            int w = Math.Min(contentW, _winW);
+            int h = Math.Min(contentH, _winH - cy);
             int dstStride = _winW * 4;
             for (int y = 0; y < h; y++)
             {
-                Buffer.BlockCopy(src, baseOffset + y * sw * 4, _canvasBytes, (cy + y) * dstStride, w * 4);
+                Buffer.BlockCopy(src, baseOffset + (srcY + y) * sw * 4 + srcX * 4,
+                                 _canvasBytes, (cy + y) * dstStride, w * 4);
             }
         }
         private void DrawSleeping()

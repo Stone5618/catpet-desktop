@@ -12,11 +12,17 @@
 <body>
   <script>
     (function () {
-      var skin = new URLSearchParams(location.search).get('skin') || 'hijiki';
+      var q = new URLSearchParams(location.search);
+      var skin = q.get('skin') || 'hijiki';
+      var scale = Number(q.get('scale') || '1');
       var base = '../assets/live2d/' + skin;
+      // display 与 model.scale 同倍放大：L2D 内部布局系数约 0.92，
+      // 由 bake.js 的 RENDER_SCALE（标称/0.92）补偿，保证母带 >= 目标分辨率
       L2Dwidget.init({
-        model: { jsonPath: base + '/' + skin + '.model.json', scale: 1 },
-        display: { position: 'left', width: 320, height: 380, hOffset: 0, vOffset: 0 },
+        model: { jsonPath: base + '/' + skin + '.model.json', scale: scale },
+        // 高度加 60%：L2D 的 bottom:65% 布局把模型垂直向下推出 display，画布加高防裁切，
+        // 多余透明区由 bake.js 包围盒裁掉
+        display: { position: 'left', width: Math.round(320 * scale), height: Math.round(380 * scale * 1.6), hOffset: 0, vOffset: 0 },
         mobile: { show: false, scale: 1 },
         react: { opacityDefault: 1, opacityOnHover: 1 },
         dev: { border: false }
