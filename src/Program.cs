@@ -88,16 +88,26 @@ namespace CatPet
 
         private static void OpenPanel()
         {
-            if (_panel == null || _panel.IsDisposed)
+            Store.Log("OpenPanel 进入");
+            try
             {
-                _panel = new PanelForm(_window, _state);
-                _panel.Show();
+                if (_panel == null || _panel.IsDisposed)
+                {
+                    _panel = new PanelForm(_window, _state);
+                    _panel.Show();
+                    Store.Log("OpenPanel 新面板已 Show");
+                }
+                else
+                {
+                    _panel.RefreshUi();
+                    _panel.Show();
+                    _panel.Activate();
+                    Store.Log("OpenPanel 已有面板激活");
+                }
             }
-            else
+            catch (Exception ex)
             {
-                _panel.RefreshUi();
-                _panel.Show();
-                _panel.Activate();
+                Store.Log("OpenPanel 异常: " + ex);
             }
         }
 

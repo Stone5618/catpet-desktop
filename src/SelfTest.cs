@@ -36,8 +36,12 @@ namespace CatPet
                         Check("帧集加载: " + skin, set.Width > 0 && set.FrameCount > 0,
                             $"{set.Width}x{set.Height} {set.FrameCount}帧 {set.Fps}fps");
                         var sw = Stopwatch.StartNew();
+                        // 基线：关键帧后必须是全幅（Reset 语义）
                         set.Reset();
+                        bool dirtyBaselineOK = set.LastRectX == 0 && set.LastRectY == 0 &&
+                                               set.LastRectW == set.Width && set.LastRectH == set.Height;
                         int opaque = 0;
+                        int type2Frames = 0, fullRectCount = 0, outOfRange = 0;
                         for (int i = 0; i < set.FrameCount; i++)
                         {
                             var buf = set.Next();
@@ -45,10 +49,25 @@ namespace CatPet
                             {
                                 for (int p = 3; p < buf.Length; p += 4) if (buf[p] > 8) opaque++;
                             }
+                            if (set.LastRectW == 0 && set.LastRectH == 0) type2Frames++;
+                            // 全幅矩形：只有关键帧和回绕时出现
+                            if (set.LastRectW == set.Width && set.LastRectH == set.Height) fullRectCount++;
+                            // 非空矩形必须落在帧范围内
+                            if (set.LastRectW > 0 &&
+                                (set.LastRectX < 0 || set.LastRectY < 0 ||
+                                 set.LastRectX + set.LastRectW > set.Width ||
+                                 set.LastRectY + set.LastRectH > set.Height))
+                            {
+                                outOfRange++;
+                            }
                         }
-                        sw.Stop();
+                        // 循环 FrameCount 次中恰好回绕 1 次：全幅矩形在循环内出现 1 次
+                        // （关键帧那次的"全幅"已由循环前 dirtyBaselineOK 单独验证）
                         Check("帧集解码全循环: " + skin, opaque > 1000,
                             $"不透明像素 {opaque}，解码 {set.FrameCount} 帧耗时 {sw.ElapsedMilliseconds}ms");
+                        Check("脏矩形语义: " + skin,
+                            dirtyBaselineOK && fullRectCount == 1 && outOfRange == 0 && type2Frames == 4,
+                            $"基线全幅 {dirtyBaselineOK}，循环内全幅 {fullRectCount}/1，type2 {type2Frames}/4，越界 {outOfRange}");
                         double perFrame = sw.Elapsed.TotalMilliseconds / set.FrameCount;
                         Check("单帧解码成本 < 2ms: " + skin, perFrame < 2.0, perFrame.ToString("0.00") + "ms");
                     }

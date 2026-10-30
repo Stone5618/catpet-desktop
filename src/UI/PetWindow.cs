@@ -115,7 +115,6 @@ namespace CatPet.UI
         private GCHandle _canvasHandle;
         private Bitmap _canvasBmp;
         private Graphics _canvasGfx;
-        private Bitmap _frameBmp;
         private byte[] _scaleSrcBytes;
         private GCHandle _scaleSrcHandle;
         private Bitmap _scaleSrcBmp;
@@ -139,6 +138,7 @@ namespace CatPet.UI
         private bool _moved;
         private long _dragStart;
         private Point _dragOffset;
+        private Point _downCursor;
         private readonly List<Sample> _samples = new List<Sample>();
         private System.Windows.Forms.Timer _physicsTimer;
         private double _px, _py, _vx, _vy;
@@ -251,11 +251,9 @@ namespace CatPet.UI
                 _decodedIndex = 0;
                 _rectX = rx; _rectY = ry; _rectW = rw; _rectH = rh;
                 _fullScaledDraw = true;
-                _frameBmp?.Dispose();
                 if (_frameHandle.IsAllocated) _frameHandle.Free();
                 _frameHandle = GCHandle.Alloc(decoded, GCHandleType.Pinned);
                 _framePtr = _frameHandle.AddrOfPinnedObject();
-                _frameBmp = new Bitmap(_frames.Width, _frames.Height, _frames.Width * 4, PixelFormat.Format32bppPArgb, _framePtr);
 
                 // 缩放渲染用的常驻缓冲：每帧只做一次拷贝，绝不每帧 new Bitmap
                 if (_scaleSrcHandle.IsAllocated) _scaleSrcHandle.Free();
@@ -304,6 +302,8 @@ namespace CatPet.UI
                 _fullScaledDraw = true;
             }
             SetWindowPos(Handle, IntPtr.Zero, Left, Top, w, h, 0x0014 /*NOZORDER|NOACTIVATE*/);
+            // 尺寸变大后可能超出工作区（贴边时尤其明显），必须钳回来
+            if (IsHandleCreated) ClampToWorkArea();
             _state.Scale = _scale;
         }
 
@@ -501,11 +501,15 @@ namespace CatPet.UI
             ur = Math.Min(sw, ur + 2); ub = Math.Min(sh, ub + 2);
             if (ur <= ux || ub <= uy) return;
 
-            // 只把需要的行搬进常驻缓冲
+            // 只把需要的行搬进常驻缓冲：源和目标都要加上 ux 偏移，
+            // 否则源图左缘 (ur-ux) 宽的内容会被贴到目标 [0, ur-ux)，
+            // 真正的 [ux, ur) 区域反而残留旧像素
             int baseOff = _decodedIndex * _decodedStride;
+            int colBytes = (ur - ux) * 4;
             for (int y = uy; y < ub; y++)
             {
-                Buffer.BlockCopy(_decoded, baseOff + y * sw * 4, _scaleSrcBytes, y * sw * 4, (ur - ux) * 4);
+                Buffer.BlockCopy(_decoded, baseOff + y * sw * 4 + ux * 4,
+                                 _scaleSrcBytes, y * sw * 4 + ux * 4, colBytes);
             }
 
             int dx = Math.Max(0, catX + (int)Math.Floor(ux * _scale));
@@ -592,8 +596,8 @@ namespace CatPet.UI
             float cy = (TopSpace + 8) * (float)_scale;
             float r = 13 * (float)_scale * pulse;
             using (var brush = new SolidBrush(Color.FromArgb(230, 230, 70, 90)))
+            using (var path = new GraphicsPath())
             {
-                var path = new GraphicsPath();
                 for (int i = 0; i < 8; i++)
                 {
                     double a = i * Math.PI / 4;
@@ -637,8 +641,8 @@ namespace CatPet.UI
         private void DrawHeart(float cx, float cy, float r, Color color)
         {
             using (var brush = new SolidBrush(color))
+            using (var path = new GraphicsPath())
             {
-                var path = new GraphicsPath();
                 path.AddBezier(cx, cy + r * 0.4f, cx - r * 1.4f, cy - r * 0.8f, cx - r * 0.2f, cy - r * 1.6f, cx, cy - r * 0.5f);
                 path.AddBezier(cx, cy - r * 0.5f, cx + r * 0.2f, cy - r * 1.6f, cx + r * 1.4f, cy - r * 0.8f, cx, cy + r * 0.4f);
                 path.AddLine(cx, cy + r * 0.4f, cx, cy + r * 0.7f);
@@ -804,12 +808,14 @@ namespace CatPet.UI
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
+            Store.Log($"MouseDown btn={e.Button} at={Cursor.Position.X},{Cursor.Position.Y} left={Left} top={Top}");
             if (e.Button == MouseButtons.Left)
             {
                 _dragging = true;
                 _moved = false;
                 _dragStart = NowMs();
                 _dragOffset = new Point(Cursor.Position.X - Left, Cursor.Position.Y - Top);
+                _downCursor = Cursor.Position;
                 lock (_samples) { _samples.Clear(); _samples.Add(new Sample { T = _dragStart, X = Left, Y = Top }); }
                 Capture = true;
                 MarkInteraction();
@@ -825,9 +831,11 @@ namespace CatPet.UI
             base.OnMouseMove(e);
             if (!_dragging || _physicsTimer != null) return;
             var p = Cursor.Position;
+            // 只有鼠标本身相对屏幕移动了才算拖动；
+            // Hop() 等窗口自身动画移动窗口时，鼠标不动，不算 _moved
+            if (Math.Abs(p.X - _downCursor.X) > 3 || Math.Abs(p.Y - _downCursor.Y) > 3) _moved = true;
             int x = p.X - _dragOffset.X;
             int y = p.Y - _dragOffset.Y;
-            if (Math.Abs(x - Left) > 3 || Math.Abs(y - Top) > 3) _moved = true;
             SetWindowPos(Handle, IntPtr.Zero, x, y, 0, 0, 0x0015 /*NOZORDER|NOACTIVATE|NOSIZE*/);
             lock (_samples)
             {
@@ -839,6 +847,7 @@ namespace CatPet.UI
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
+            Store.Log($"MouseUp btn={e.Button} dragging={_dragging} moved={_moved}");
             if (!_dragging) return;
             _dragging = false;
             Capture = false;
@@ -972,9 +981,10 @@ namespace CatPet.UI
                 _mode = PetMode.Idle;
             }
 
-            if (_mode == PetMode.Idle)
+            // 空闲衰减：睡觉和炸毛时同样在流逝（睡觉≠无敌），
+            // 只有"正在生气"那 30 秒不计——它已经在炸毛时扣过了
+            if (_mode != PetMode.Annoyed)
             {
-                // 空闲衰减只在"人在但没摸"时生效，最多每 20 分钟 1 点
                 _state.IdleDecay(Environment.TickCount - _lastInteraction);
             }
 

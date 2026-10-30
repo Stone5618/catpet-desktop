@@ -1,4 +1,4 @@
-# 猫猫桌宠 v1.0.0 交付说明
+﻿# 猫猫桌宠 v1.0.0 交付说明
 
 > 原生版（C# / .NET Framework 4.8 + Win32 分层窗口），不再依赖 Chromium。
 > 安装包 6.96MB，安装后 15.4MB，60fps，双皮肤，猫叫与呼噜。
@@ -9,7 +9,7 @@
 
 | 文件 | 说明 |
 |---|---|
-| `dist\CatPet-Setup-1.0.0.exe` | 安装包（7.91MB，含两只猫的全部素材与音效） |
+| `dist\CatPet-Setup-1.0.1.exe` | 安装包（7.91MB，含两只猫的全部素材与音效） |
 | `bin\CatPet.exe` | 免安装可执行文件（77KB，需同级 `assets` 目录） |
 | `src\` | 全部源码（Core / UI 分层） |
 | `tools\` | 素材烘焙与音效生成工具（可复现） |
@@ -22,7 +22,7 @@
 
 ```powershell
 # 安装（静默）
-dist\CatPet-Setup-1.0.0.exe /S
+dist\CatPet-Setup-1.0.1.exe /S
 
 # 卸载（静默）
 %LOCALAPPDATA%\CatPet\Uninstall.exe /S

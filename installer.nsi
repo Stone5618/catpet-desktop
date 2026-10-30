@@ -2,7 +2,7 @@
 !include "MUI2.nsh"
 
 !define APPNAME "猫猫桌宠"
-!define VERSION "1.0.0"
+!define VERSION "1.0.1"
 !define PUBLISHER "Stone5618"
 
 Name "${APPNAME}"

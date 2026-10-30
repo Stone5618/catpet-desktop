@@ -127,7 +127,9 @@ namespace CatPet.UI
             _scale.SelectedIndexChanged += (s, e) =>
             {
                 double[] values = { 0.75, 1.0, 1.25, 1.5 };
-                _pet.SetScale(values[_scale.SelectedIndex]);
+                int i = _scale.SelectedIndex;
+                if (i < 0 || i >= values.Length) return;
+                _pet.SetScale(values[i]);
             };
 
             RefreshUi();

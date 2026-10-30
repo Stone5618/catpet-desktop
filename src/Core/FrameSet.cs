@@ -103,6 +103,9 @@ namespace CatPet.Core
             Buffer.BlockCopy(raw, 0, _current, 0, Math.Min(len, _current.Length));
             if (_first == null) _first = (byte[])_current.Clone();
             else Buffer.BlockCopy(_current, 0, _first, 0, _current.Length);
+            // 关键帧重置整幅画面，脏区也必须是全幅；
+            // 否则 Next() 首帧会沿用上一轮循环末帧的旧矩形
+            SetRect(0, 0, Width, Height);
             _cursor = 1;
             _started = true;
         }
@@ -114,7 +117,9 @@ namespace CatPet.Core
 
             if (_cursor >= _payloads.Count)
             {
+                // 回到循环起点：整幅都是"新内容"，必须置全幅脏区
                 Buffer.BlockCopy(_first, 0, _current, 0, _current.Length);
+                SetRect(0, 0, Width, Height);
                 _cursor = 1;
                 return _current;
             }
@@ -122,6 +127,8 @@ namespace CatPet.Core
             byte type = _types[_cursor];
             if (type == 2)
             {
+                // 无变化帧：脏区为空，不能沿用上一帧的矩形
+                SetRect(0, 0, 0, 0);
                 _cursor++;
                 return _current;
             }

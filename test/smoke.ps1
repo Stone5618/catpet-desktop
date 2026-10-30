@@ -202,14 +202,17 @@ try {
         $stFed = Get-State
         Record '面板喂食' (($stFed.TodayFed -gt $beforeFed) -or ($stFed.Mood -ge 92)) ("TodayFed $beforeFed -> $($stFed.TodayFed), Mood=$($stFed.Mood)")
 
-        # 开机自启
+        # 开机自启（双向验证：注册表状态应随开关翻转，与初始状态无关）
         $auto = Find-ByName $rootEl '开机自启'
-        if ($auto) { Click-Element $auto; Start-Sleep -Milliseconds 500 }
+        $regBefore = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue).CatPet
+        if ($auto) { Click-Element $auto; Start-Sleep -Milliseconds 900 }
         $run = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue).CatPet
-        Record '开机自启写入注册表' ($null -ne $run)
-        if ($auto) { Click-Element $auto; Start-Sleep -Milliseconds 500 }
-        $run2 = (Get-ItemProperty 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue).CatPet
-        Record '开机自启可关闭' ($null -eq $run2)
+        $flipped1 = ($null -eq $regBefore) -ne ($null -eq $run)
+        Record '开机自启翻转1' $flipped1 ("before=" + $(if ($regBefore) { 'SET' } else { 'NULL' }) + " after=" + $(if ($run) { 'SET' } else { 'NULL' }))
+        if ($auto) { Click-Element $auto; Start-Sleep -Milliseconds 900 }
+        $run2 = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue).CatPet
+        $flipped2 = ($null -eq $run) -ne ($null -eq $run2)
+        Record '开机自启翻转2' $flipped2 ("after2=" + $(if ($run2) { 'SET' } else { 'NULL' }))
 
         # 缩放 150%：点焦点到下拉框，用键盘选到最大档
         $combo = Find-ByName $rootEl '100%'
