@@ -36,14 +36,12 @@ const LOOP_MAX = Number(arg('loopmax', '3500'));
 const MASTER_SCALE = Math.max(0.5, Math.min(3, Number(arg('scale', '1'))));
 const WIDTH = 320;
 const HEIGHT = 380;
-// L2Dwidget 实测定标（display=model.scale=d，窗口=display*1.35）：
-//   d=1.42 → 猫 365x540，即 1x 母带(241x319)的 1.506x/1.693y，完整
-//   （猫贴 canvas 左/下与 1x 素材形态一致，非裁切；L2D 的 canvas 贴窗口左下放置，
-//     窗口加余量只会让 canvas 跟着挪，永远没有底/左余量——所以窗口恰好 display*1.35）
-const CALIB = 1.0563; // 1.506/1.42
-const RENDER_SCALE = MASTER_SCALE / CALIB;
-const CAP_W = Math.round(WIDTH * RENDER_SCALE * 1.35);
-const CAP_H = Math.round(HEIGHT * RENDER_SCALE * 1.6);
+// 正确标定（display 等比放大 + model.scale=1）：
+//   display = 320*s x 380*s，猫 = 217*s x 292*s（1x 母带 217x292 的 s 倍，形状不变）
+//   s=1.5 → 猫 324x439 = 精确 1.5x，且四边不贴画布（窗口=display+200 余量）
+const RENDER_SCALE = MASTER_SCALE;
+const CAP_W = Math.round(WIDTH * RENDER_SCALE) + 200;
+const CAP_H = Math.round(HEIGHT * RENDER_SCALE) + 200;
 
 app.commandLine.appendSwitch('allow-file-access-from-files');
 
@@ -80,7 +78,7 @@ app.whenReady().then(async () => {
   // 用 zoomFactor 提高渲染像素密度：CSS 布局不变，canvas/WebGL backing 随 DPR 放大，
   // Live2D 纹理直接从 2048 原图采样 → 高分母带，不经任何插值
 
-  await win.loadFile(path.join(__dirname, 'bake-page.html'), { search: `skin=${SKIN}&scale=${RENDER_SCALE.toFixed(4)}` });
+  await win.loadFile(path.join(__dirname, 'bake-page.html'), { search: `skin=${SKIN}&s=${RENDER_SCALE}` });
   await new Promise((r) => setTimeout(r, 5000));
 
   const hasCanvas = await win.webContents.executeJavaScript('!!document.querySelector("canvas")').catch(() => false);
@@ -161,7 +159,7 @@ app.whenReady().then(async () => {
     const bmp = nativeImage.createFromBuffer(png).toBitmap();
     for (let y = 0; y < CAP_H; y++) {
       for (let x = 0; x < CAP_W; x++) {
-        if (bmp[(y * WIDTH + x) * 4 + 3] > 0) {
+        if (bmp[(y * CAP_W + x) * 4 + 3] > 0) {
           if (x < minX) minX = x;
           if (x > maxX) maxX = x;
           if (y < minY) minY = y;

@@ -5,19 +5,18 @@
   "masterScale": 1.5,
   "crop": {
     "x": 0,
-    "y": 269,
-    "width": 613,
-    "height": 594
+    "y": 260,
+    "width": 362,
+    "height": 467
   },
   "fps": 60,
-  "frames": 207,
-  "loopMs": 3447,
-  "capturedFrames": 195,
-  "capturedFps": 19.5,
+  "frames": 213,
+  "loopMs": 3546,
+  "capturedFrames": 185,
+  "capturedFps": 18.5,
   "format": "CPF1",
   "blendFrames": 4,
-  "keyframeBytes": 60392,
-  "deltaBytes": 3158916,
-  "generatedAt": "2026-10-30T16:37:41.552Z",
-  "totalMB": 3.07
+  "keyframeBytes": 47090,
+  "deltaBytes": 2661573,
+  "generatedAt": "2026-10-30T17:42:13.853Z"
 }
