@@ -58,7 +58,7 @@ namespace CatPet.UI
         [DllImport("user32.dll")] private static extern bool DestroyMenu(IntPtr menu);
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)] private static extern bool Shell_NotifyIcon(uint message, ref NotifyIconData data);
         [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
-        [DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr hIcon);
+        [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
         [StructLayout(LayoutKind.Sequential)] private struct Point32 { public int X, Y; }
         [StructLayout(LayoutKind.Sequential)] private struct Size32 { public int CX, CY; }
@@ -121,6 +121,11 @@ namespace CatPet.UI
         private IntPtr _framePtr;
         private GCHandle _frameHandle;
 
+        // 覆盖层缓存（睡眠 Zzz / 炸毛图标）：随缩放档重建，避免每帧分配 GDI+ 对象
+        private Font _sleepFont;
+        private SolidBrush _sleepBrush;
+        private SolidBrush _annoyBrush;
+
         // 气泡缓存
         private Bitmap _bubbleCache;
         private string _bubbleCacheText;
@@ -130,7 +135,6 @@ namespace CatPet.UI
         private Thread _renderThread;
         private volatile bool _alive = true;
         private bool _visible = true;
-        private int _framePhase;
         private long _lastInteraction;
 
         // 拖拽/抛掷
@@ -263,7 +267,6 @@ namespace CatPet.UI
                 _scaleSrcBmp = new Bitmap(_frames.Width, _frames.Height, _frames.Width * 4,
                     PixelFormat.Format32bppPArgb, _scaleSrcHandle.AddrOfPinnedObject());
 
-                _framePhase = 0;
                 frames = null;
             }
             _state.Skin = skin;
@@ -345,6 +348,11 @@ namespace CatPet.UI
             };
             _dib = CreateDIBSection(_screenDc, ref bmi, 0, out _dibBits, IntPtr.Zero, 0);
             _oldObj = SelectObject(_memDc, _dib);
+
+            // 覆盖层字体/画笔按旧字号缓存，缩放变了必须作废（与 _bubbleCache 同一规则）
+            if (_sleepFont != null) { _sleepFont.Dispose(); _sleepFont = null; }
+            if (_sleepBrush != null) { _sleepBrush.Dispose(); _sleepBrush = null; }
+            if (_annoyBrush != null) { _annoyBrush.Dispose(); _annoyBrush = null; }
         }
 
         // ---------------- 渲染 ----------------
@@ -379,12 +387,14 @@ namespace CatPet.UI
                     lastStat = now;
                     try
                     {
-                        var proc = System.Diagnostics.Process.GetCurrentProcess();
-                        var json = "{\"fps\":" + frames + ",\"avgMs\":" + (frames > 0 ? (renderTicks * 1000.0 / Stopwatch.Frequency / frames).ToString("0.00") : "0") + ",\"memMB\":" + (proc.WorkingSet64 / 1024 / 1024)
-                                   + ",\"uptime\":" + (int)(now / 1000)
-                                   + ",\"mode\":\"" + _mode + "\""
-                                   + ",\"visible\":" + (_visible ? "true" : "false") + "}";
-                        File.WriteAllText(Path.Combine(Store.Dir, "stats.json"), json);
+                        using (var proc = System.Diagnostics.Process.GetCurrentProcess())
+                        {
+                            var json = "{\"fps\":" + frames + ",\"avgMs\":" + (frames > 0 ? (renderTicks * 1000.0 / Stopwatch.Frequency / frames).ToString("0.00") : "0") + ",\"memMB\":" + (proc.WorkingSet64 / 1024 / 1024)
+                                       + ",\"uptime\":" + (int)(now / 1000)
+                                       + ",\"mode\":\"" + _mode + "\""
+                                       + ",\"visible\":" + (_visible ? "true" : "false") + "}";
+                            File.WriteAllText(Path.Combine(Store.Dir, "stats.json"), json);
+                        }
                         frames = 0;
                         renderTicks = 0;
                     }
@@ -399,7 +409,6 @@ namespace CatPet.UI
             if (_decoded == null || _decodedCount == 0) return;
             _decodedIndex++;
             if (_decodedIndex >= _decodedCount) _decodedIndex = 0;
-            _framePhase++;
         }
 
         private void RenderFrame(double now)
@@ -568,25 +577,25 @@ namespace CatPet.UI
             var src = _decoded;
             int sw = _frames.Width;
             int baseOffset = _decodedIndex * _decodedStride;
-            int cx = 0;
             int cy = TopSpace;
-            int w = Math.Min(sw, _winW - cx);
+            int w = Math.Min(sw, _winW);
             int h = Math.Min(_frames.Height, _winH - cy);
             int dstStride = _winW * 4;
             for (int y = 0; y < h; y++)
             {
-                Buffer.BlockCopy(src, baseOffset + y * sw * 4, _canvasBytes, (cy + y) * dstStride + cx * 4, w * 4);
+                Buffer.BlockCopy(src, baseOffset + y * sw * 4, _canvasBytes, (cy + y) * dstStride, w * 4);
             }
         }
         private void DrawSleeping()
         {
-            using (var font = new Font("Microsoft YaHei", 12f * (float)_scale, FontStyle.Bold))
-            using (var brush = new SolidBrush(Color.FromArgb(200, 120, 160, 220)))
+            if (_sleepFont == null)
             {
-                string z = "z z z";
-                var size = _canvasGfx.MeasureString(z, font);
-                _canvasGfx.DrawString(z, font, brush, _winW - size.Width - 6 * (float)_scale, 4 * (float)_scale);
+                _sleepFont = new Font("Microsoft YaHei", 12f * (float)_scale, FontStyle.Bold);
+                _sleepBrush = new SolidBrush(Color.FromArgb(200, 120, 160, 220));
             }
+            string z = "z z z";
+            var size = _canvasGfx.MeasureString(z, _sleepFont);
+            _canvasGfx.DrawString(z, _sleepFont, _sleepBrush, _winW - size.Width - 6 * (float)_scale, 4 * (float)_scale);
         }
 
         private void DrawAnnoyed(double now)
@@ -595,7 +604,7 @@ namespace CatPet.UI
             float cx = _winW - 34 * (float)_scale;
             float cy = (TopSpace + 8) * (float)_scale;
             float r = 13 * (float)_scale * pulse;
-            using (var brush = new SolidBrush(Color.FromArgb(230, 230, 70, 90)))
+            if (_annoyBrush == null) _annoyBrush = new SolidBrush(Color.FromArgb(230, 230, 70, 90));
             using (var path = new GraphicsPath())
             {
                 for (int i = 0; i < 8; i++)
@@ -608,7 +617,7 @@ namespace CatPet.UI
                     else path.AddLine(path.GetLastPoint(), new PointF(x, y));
                 }
                 path.CloseFigure();
-                _canvasGfx.FillPath(brush, path);
+                _canvasGfx.FillPath(_annoyBrush, path);
             }
         }
 
@@ -857,9 +866,30 @@ namespace CatPet.UI
             long now = NowMs();
             bool doubleClick = now - _lastClickAt < 350;
             _lastClickAt = now;
-            if (doubleClick) { _lastClickAt = 0; OpenPanelRequested?.Invoke(); return; }
+            if (doubleClick)
+            {
+                _lastClickAt = 0;
+                CancelPendingPet();
+                OpenPanelRequested?.Invoke();
+                return;
+            }
 
-            Petting?.Invoke(PetEvent.None);
+            // 第一击延迟 360ms 结算：双击的第二击在窗口期内取消它，
+            // 避免每次双击看面板都白拿一次亲密度
+            CancelPendingPet();
+            _petTimer = new System.Windows.Forms.Timer { Interval = 360 };
+            _petTimer.Tick += (s, ev) => { CancelPendingPet(); Petting?.Invoke(PetEvent.None); };
+            _petTimer.Start();
+        }
+
+        private System.Windows.Forms.Timer _petTimer;
+
+        private void CancelPendingPet()
+        {
+            if (_petTimer == null) return;
+            _petTimer.Stop();
+            _petTimer.Dispose();
+            _petTimer = null;
         }
 
         private void StartThrow()
@@ -968,7 +998,7 @@ namespace CatPet.UI
             _state.RefreshDay(now);
 
             int idle = GetSystemIdleMs();
-            bool night = DateTime.Now.Hour >= 23 || DateTime.Now.Hour < 6;
+            bool night = PetState.IsNight(DateTime.Now.Hour);
             int threshold = night ? 60_000 : 180_000;
 
             if (_mode != PetMode.Annoyed && _mode != PetMode.Sleeping && idle > threshold)
@@ -1015,7 +1045,7 @@ namespace CatPet.UI
         // ---------------- 菜单 / 托盘 ----------------
 
         private const int IdPet = 1001, IdFeed = 1002, IdShow = 1003, IdPanel = 1004,
-            IdTop = 1005, IdPass = 1006, IdAuto = 1007, IdSkin = 1008, IdMute = 1009, IdExit = 1010,
+            IdTop = 1005, IdSkin = 1008, IdMute = 1009, IdExit = 1010,
             IdScale100 = 1011, IdScale125 = 1012, IdScale150 = 1013, IdScale75 = 1014;
 
         private void ShowContextMenu(Point at)
@@ -1034,8 +1064,13 @@ namespace CatPet.UI
             AppendMenu(menu, 0, (IntPtr)IdExit, "退出");
 
             SetForegroundWindow(Handle);
-            TrackPopupMenu(menu, 0x0002 /*RIGHTBUTTON*/ | 0x0100 /*RETURNCMD*/, at.X, at.Y, 0, Handle, IntPtr.Zero);
+            // TPM_RETURNCMD 下 TrackPopupMenu 直接返回所选 ID、不发送 WM_COMMAND，
+            // 必须就地处理返回值；此前返回值被丢弃，真实点击菜单全部无响应
+            int cmd = TrackPopupMenu(menu, 0x0002 /*RIGHTBUTTON*/ | 0x0100 /*RETURNCMD*/, at.X, at.Y, 0, Handle, IntPtr.Zero);
             DestroyMenu(menu);
+            if (cmd > 0) HandleMenu(cmd);
+            // 恢复消息泵：弹层结束后补一次消息，规避 SetForegroundWindow 留下的焦点卡死
+            PostMessage(Handle, 0x0000 /*WM_NULL*/, IntPtr.Zero, IntPtr.Zero);
         }
 
         protected override void WndProc(ref Message m)
@@ -1067,7 +1102,6 @@ namespace CatPet.UI
                     TopMost = _state.Pinned;
                     Store.Save(_state);
                     break;
-                case IdPass: break;
                 case IdMute:
                     _state.Muted = !_state.Muted;
                     Audio.Muted = _state.Muted;
@@ -1154,6 +1188,7 @@ namespace CatPet.UI
             _alive = false;
             _behaviorTimer?.Stop();
             _physicsTimer?.Stop();
+            CancelPendingPet();
             if (_trayAdded)
             {
                 var data = new NotifyIconData { cbSize = (uint)Marshal.SizeOf(typeof(NotifyIconData)), hWnd = Handle, uID = 1 };

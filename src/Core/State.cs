@@ -11,6 +11,8 @@ namespace CatPet.Core
     {
         public const int MaxMood = 100;
         public const int MinMood = 5;
+        /// <summary>自然衰减的地板：在线空闲与离线结算一致，心情不会因挂机低于此值。</summary>
+        public const int MoodFloor = 20;
         public const int AnnoyWindowMs = 8000;
         public const int AnnoyThreshold = 5;
         public const int AnnoyDurationMs = 30000;
@@ -48,6 +50,9 @@ namespace CatPet.Core
         {
             return DateTimeOffset.FromUnixTimeMilliseconds(ms).ToLocalTime().ToString("yyyy-MM-dd");
         }
+
+        /// <summary>统一的"夜间"定义（23:00–6:00）：入睡阈值与台词库共用，避免各处界线漂移。</summary>
+        public static bool IsNight(int hour) => hour >= 23 || hour < 6;
 
         public static PetState Create(long now)
         {
@@ -120,7 +125,7 @@ namespace CatPet.Core
             if (minutes >= 10)
             {
                 int loss = (int)Math.Min(25, minutes / 10);
-                Mood = Clamp(Mood - loss, MinMood, MaxMood);
+                Mood = Clamp(Mood - loss, MoodFloor, MaxMood);
             }
             LastSeen = now;
             PetStreak = 0;
@@ -131,7 +136,7 @@ namespace CatPet.Core
         {
             int steps = (int)(idleMs / (20 * 60 * 1000));
             if (steps <= 0) return;
-            Mood = Clamp(Mood - steps, 20, MaxMood);
+            Mood = Clamp(Mood - steps, MoodFloor, MaxMood);
         }
 
         public PetEvent Pet(long now)

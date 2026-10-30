@@ -117,6 +117,12 @@ namespace CatPet
             s6.Settle(now + 10 * 60 * 60 * 1000);
             Check("离线 10 小时最多掉 25", s6.Mood == 65, s6.Mood.ToString());
 
+            var s6b = PetState.Create(now);
+            s6b.Mood = 25;
+            s6b.LastSeen = now;
+            s6b.Settle(now + 10 * 60 * 60 * 1000);
+            Check("离线衰减地板 20（与在线一致）", s6b.Mood == PetState.MoodFloor, s6b.Mood.ToString());
+
             var s7 = PetState.Create(now);
             s7.TodayPetted = 9;
             s7.RefreshDay(now + 24 * 60 * 60 * 1000);

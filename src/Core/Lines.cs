@@ -33,7 +33,6 @@ namespace CatPet.Core
 
         private static readonly string[] Fed = { "好吃！", "小鱼干！", "还有吗？", "（嚼嚼嚼）" };
         private static readonly string[] Full = { "吃不下了…", "肚子圆了", "留着下次吃" };
-        private static readonly string[] Wake = { "唔…醒了", "（伸懒腰）", "找我干嘛", "睡得好香" };
 
         private static readonly string[] Idle =
         {
@@ -58,11 +57,10 @@ namespace CatPet.Core
                 case "grumpy": return Grumpy;
                 case "fed": return Fed;
                 case "full": return Full;
-                case "wake": return Wake;
                 case "idle":
-                    if (hour >= 5 && hour < 11) return Morning;
-                    if (hour >= 23 || hour < 5) return Late;
-                    if (hour >= 20) return Night;
+                    if (PetState.IsNight(hour)) return Late;      // 23-6：与入睡阈值同一"夜间"
+                    if (hour >= 20) return Night;                 // 20-23：傍晚
+                    if (hour < 11) return Morning;                // 6-11：早晨（界线对齐 IsNight 的 6 点）
                     return Idle;
                 default: return Idle;
             }
