@@ -4,3 +4,8 @@ obj/
 *.user
 *.suo
 test/smoke-result.json
+
+# 调试/自检残留
+minitest.cs
+st?.txt
+selftest-out.txt
