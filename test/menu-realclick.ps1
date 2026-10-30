@@ -110,7 +110,7 @@ try {
             Start-Sleep -Milliseconds 900
             $a1 = (Get-State).Affinity
             # 延迟结算 360ms 已过；若 P0 bug 存在这里 a1 == a0
-            Record '真实点击摸摸头 → 亲密度+1（P0 修复验证）' ($a1 -eq $a0 + 1) ("$a0 -> $a1")
+            Record '真实点击摸摸头 → 亲密度+2（P0 修复验证）' ($a1 -eq $a0 + 2) ("$a0 -> $a1")
         }
     }
 

@@ -34,6 +34,18 @@ namespace CatPet.Core
         private static readonly string[] Fed = { "好吃！", "小鱼干！", "还有吗？", "（嚼嚼嚼）" };
         private static readonly string[] Full = { "吃不下了…", "肚子圆了", "留着下次吃" };
 
+        // 被戳醒：起床气 + 伸懒腰
+        private static readonly string[] Wake = { "唔…醒了", "（伸懒腰）", "谁呀…", "睡得好香…" };
+
+        // 摸尾巴惹怒
+        private static readonly string[] TailGrumpy = { "尾巴不行！", "不许碰尾巴！", "（尾巴甩开）", "哼，尾巴是禁区" };
+
+        // 重开欢迎：按离开时长分档（短 / 中 / 长），亲密度高时额外热情
+        private static readonly string[] WelcomeShort = { "回来啦～", "你走开了一会儿嘛", "（抬头看你）" };
+        private static readonly string[] WelcomeMid = { "好久不见，想我了吗？", "你回来得好慢", "（凑过来闻了闻）" };
+        private static readonly string[] WelcomeLong = { "你去哪了…我等了好久", "（委屈地看你）", "还以为你不要我了" };
+        private static readonly string[] WelcomeAffection = { "终于回来了！蹭蹭你", "我一直在等你哦", "（扑上来）" };
+
         private static readonly string[] Idle =
         {
             "在忙吗？", "看看窗外", "（舔爪子）", "今天天气不错", "有点无聊", "（尾巴晃了晃）"
@@ -57,6 +69,12 @@ namespace CatPet.Core
                 case "grumpy": return Grumpy;
                 case "fed": return Fed;
                 case "full": return Full;
+                case "wake": return Wake;
+                case "tailgrumpy": return TailGrumpy;
+                case "welcome_short": return WelcomeShort;
+                case "welcome_mid": return WelcomeMid;
+                case "welcome_long": return WelcomeLong;
+                case "welcome_affection": return WelcomeAffection;
                 case "idle":
                     if (PetState.IsNight(hour)) return Late;      // 23-6：与入睡阈值同一"夜间"
                     if (hour >= 20) return Night;                 // 20-23：傍晚

@@ -121,13 +121,13 @@ namespace CatPet
             var s = PetState.Create(now);
             Check("初始心情/亲密度", s.Mood == 70 && s.Affinity == 0);
 
-            var e1 = s.Pet(now + 100);
-            Check("第一次摸: 开心 + 亲密度", e1 == PetEvent.Happy && s.Affinity == 1, e1.ToString());
+            var e1 = s.Pet(now + 100, PetZone.Head);
+            Check("第一次摸头: 开心 + 亲密度+2", e1 == PetEvent.Happy && s.Affinity == 2, e1.ToString());
 
-            for (int i = 0; i < 4; i++) s.Pet(now + 200 + i * 100);
+            for (int i = 0; i < 4; i++) s.Pet(now + 200 + i * 100, PetZone.Head);
             Check("连摸 5 次炸毛", s.IsAnnoyed(now + 1000), s.PetStreak.ToString());
 
-            var grumpy = s.Pet(now + 1500);
+            var grumpy = s.Pet(now + 1500, PetZone.Head);
             Check("生气时不加亲密度", grumpy == PetEvent.Grumpy);
 
             var s2 = PetState.Create(now);
@@ -171,6 +171,43 @@ namespace CatPet
             s8.Mood = 30;
             s8.IdleDecay(20 * 60 * 1000);
             Check("空闲 20 分钟掉 1 点", s8.Mood == 29, s8.Mood.ToString());
+
+            // —— 触摸分区 ——
+            var s9 = PetState.Create(now);
+            s9.Pet(now + 100, PetZone.Head);
+            Check("摸头 +2 心情 +2 亲密", s9.Mood == 72 && s9.Affinity == 2, $"{s9.Mood}/{s9.Affinity}");
+
+            var s10 = PetState.Create(now);
+            s10.Pet(now + 100, PetZone.Body);
+            Check("摸身 +1 心情 +1 亲密", s10.Mood == 71 && s10.Affinity == 1, $"{s10.Mood}/{s10.Affinity}");
+
+            // 摸尾巴 7% 惹怒：用固定随机验证不会崩（不做概率断言，只验证分支可达）
+            var s11 = PetState.Create(now);
+            var tailEv = s11.Pet(now + 100, PetZone.Tail);
+            Check("摸尾巴: 结果合法", tailEv == PetEvent.Happy || tailEv == PetEvent.TailGrumpy, tailEv.ToString());
+
+            // —— 亲密度疏远 ——
+            var s12 = PetState.Create(now);
+            s12.Affinity = 50;
+            s12.LastSeen = now;
+            s12.Settle(now + 5L * 3600_000); // 离线 5 小时：宽限 2 小时，剩余 3 小时 -3
+            Check("离线 5 小时亲密度 -3", s12.Affinity == 47, s12.Affinity.ToString());
+
+            var s13 = PetState.Create(now);
+            s13.Affinity = 5;
+            s13.LastSeen = now;
+            s13.Settle(now + 30L * 3600_000); // 离线 30 小时：封顶 -10，但地板 0
+            Check("离线亲密度衰减封顶 + 地板 0", s13.Affinity == 0, s13.Affinity.ToString());
+
+            var s14 = PetState.Create(now);
+            s14.Affinity = 30;
+            s14.IdleAffinityDecay(60 * 60 * 1000);
+            Check("在线空闲 60 分钟亲密度 -1", s14.Affinity == 29, s14.Affinity.ToString());
+
+            var s15 = PetState.Create(now);
+            s15.Affinity = 12; // "朋友"(≥10) 掉到 8 就降级到"陌生猫"(<10)
+            s15.IdleAffinityDecay(4L * 60 * 60 * 1000); // 4 小时 -4 → 8
+            Check("亲密度可降级", s15.Affinity == 8 && s15.LevelTitle == "陌生猫", $"{s15.Affinity}/{s15.LevelTitle}");
 
             Console.WriteLine();
             Console.WriteLine(_fail == 0 ? "SELFTEST PASS" : $"SELFTEST FAIL ({_fail})");

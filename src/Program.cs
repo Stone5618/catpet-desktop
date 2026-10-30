@@ -45,16 +45,31 @@ namespace CatPet
 
                 _window = new PetWindow(_state, _assets);
                 _window.Petting += OnPetting;
+                _window.Woken += OnWoken;
                 _window.Feeding += OnFeeding;
                 _window.OpenPanelRequested += OpenPanel;
                 _window.ExitRequested += () => { _window.Close(); Application.Exit(); };
 
                 if (!_state.FirstRunDone) StartGuide();
+                else SayWelcome();
 
                 Application.Run(_window);
             }
 
             return 0;
+        }
+
+        /// <summary>重开欢迎：按离开时长分档，亲密度高时更热情。首次运行不触发（走引导）。</summary>
+        private static void SayWelcome()
+        {
+            long awayMs = PetState.Now - _state.LastSeen;
+            double awayHours = awayMs / 3600000.0;
+            string kind;
+            if (_state.Affinity >= 60) kind = "welcome_affection";
+            else if (awayHours >= 8) kind = "welcome_long";
+            else if (awayHours >= 1) kind = "welcome_mid";
+            else kind = "welcome_short";
+            _window.Say(Lines.Pick(kind, _state), 3200);
         }
 
         /// <summary>首次启动的两句引导，说完就不再出现。</summary>
@@ -111,10 +126,10 @@ namespace CatPet
             }
         }
 
-        private static void OnPetting(PetEvent _)
+        private static void OnPetting(PetZone zone)
         {
             long now = PetState.Now;
-            var ev = _state.Pet(now);
+            var ev = _state.Pet(now, zone);
 
             switch (ev)
             {
@@ -126,6 +141,10 @@ namespace CatPet
                 case PetEvent.Grumpy:
                     _window.Say(Lines.Pick("grumpy", _state));
                     break;
+                case PetEvent.TailGrumpy:
+                    _window.Say(Lines.Pick("tailgrumpy", _state));
+                    Audio.Play("hiss.wav");
+                    break;
                 case PetEvent.Happy:
                     _window.Wake();
                     _window.Say(Lines.Pick("pet", _state));
@@ -135,6 +154,15 @@ namespace CatPet
                     break;
             }
 
+            Store.Save(_state);
+            _panel?.RefreshUi();
+        }
+
+        /// <summary>戳醒睡觉的猫：起床气台词，不计入摸头连击。</summary>
+        private static void OnWoken()
+        {
+            _window.Say(Lines.Pick("wake", _state));
+            Audio.Play("meow2.wav");
             Store.Save(_state);
             _panel?.RefreshUi();
         }

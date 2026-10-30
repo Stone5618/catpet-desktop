@@ -154,6 +154,8 @@ namespace CatPet.UI
         private double _px, _py, _vx, _vy;
 
         private long _lastClickAt;
+        private bool _downWasSleeping;
+        private PetZone _downZone = PetZone.Head;
         private System.Windows.Forms.Timer _behaviorTimer;
 
         // 托盘
@@ -186,7 +188,8 @@ namespace CatPet.UI
         }
 
         public string AssetsDir { get; }
-        public event Action<PetEvent> Petting;
+        public event Action<PetZone> Petting;
+        public event Action Woken;
         public event Action Feeding;
         public event Action OpenPanelRequested;
         public event Action ExitRequested;
@@ -976,6 +979,8 @@ namespace CatPet.UI
                 _dragStart = NowMs();
                 _dragOffset = new Point(Cursor.Position.X - Left, Cursor.Position.Y - Top);
                 _downCursor = Cursor.Position;
+                _downWasSleeping = (_mode == PetMode.Sleeping);
+                _downZone = ZoneAt(e.Y);
                 lock (_samples) { _samples.Clear(); _samples.Add(new Sample { T = _dragStart, X = Left, Y = Top }); }
                 Capture = true;
                 MarkInteraction();
@@ -1027,9 +1032,19 @@ namespace CatPet.UI
 
             // 第一击延迟 360ms 结算：双击的第二击在窗口期内取消它，
             // 避免每次双击看面板都白拿一次亲密度
+            // 戳醒睡觉的猫：单独走 Woken，不计入摸头连击/亲密度
+            if (_downWasSleeping)
+            {
+                Woken?.Invoke();
+                return;
+            }
+
+            // 第一击延迟 360ms 结算：双击的第二击在窗口期内取消它，
+            // 避免每次双击看面板都白拿一次亲密度
             CancelPendingPet();
+            var zone = _downZone;
             _petTimer = new System.Windows.Forms.Timer { Interval = 360 };
-            _petTimer.Tick += (s, ev) => { CancelPendingPet(); Petting?.Invoke(PetEvent.None); };
+            _petTimer.Tick += (s, ev) => { CancelPendingPet(); Petting?.Invoke(zone); };
             _petTimer.Start();
         }
 
@@ -1112,6 +1127,18 @@ namespace CatPet.UI
             if (x != Left || y != Top) SetWindowPos(Handle, IntPtr.Zero, x, y, 0, 0, 0x0015);
         }
 
+        /// <summary>点击窗口 Y 坐标 → 猫身分区：头(0~1/3)、身体(1/3~2/3)、尾巴(2/3~1)。</summary>
+        private PetZone ZoneAt(int winY)
+        {
+            double catTop = TopSpace * _renderScale;
+            double catH = (_streaming ? _hiResRect.Height : _meta.crop.height) * _renderScale;
+            if (catH <= 0) return PetZone.Head;
+            double rel = (winY - catTop) / catH;
+            if (rel < 1.0 / 3.0) return PetZone.Head;
+            if (rel < 2.0 / 3.0) return PetZone.Body;
+            return PetZone.Tail;
+        }
+
         private void MarkInteraction()
         {
             _lastInteraction = Environment.TickCount;
@@ -1175,7 +1202,7 @@ namespace CatPet.UI
 
         // ---------------- 面板/外部调用 ----------------
 
-        public void PetFromPanel() { MarkInteraction(); Petting?.Invoke(PetEvent.None); }
+        public void PetFromPanel() { MarkInteraction(); Petting?.Invoke(PetZone.Head); }
         public void FeedFromPanel() { MarkInteraction(); Feeding?.Invoke(); }
 
         public void HidePet()
@@ -1244,7 +1271,7 @@ namespace CatPet.UI
         {
             switch (id)
             {
-                case IdPet: Petting?.Invoke(PetEvent.None); break;
+                case IdPet: Petting?.Invoke(PetZone.Head); break;
                 case IdFeed: Feeding?.Invoke(); break;
                 case IdPanel: OpenPanelRequested?.Invoke(); break;
                 case IdShow: _visible = !_visible; UpdateVisibility(); break;
